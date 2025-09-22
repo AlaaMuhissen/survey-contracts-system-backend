@@ -1,12 +1,24 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ES2020",
-    "moduleResolution": "Node",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "outDir": "dist",
-    "strict": true,
+    "rootDir": "src",
+    "baseUrl": "src",
+
+   "paths": {
+      "@routes/*": ["routes/*"],
+      "@services/*": ["services/*"],
+      "@middlewares/*": ["middlewares/*"],
+      "@lib/*": ["lib/*"],
+      "@utils/*": ["utils/*"]
+    }
+    ,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true
   },
-  "include": ["src"]
+  "include": ["src", "scripts"]
 }
