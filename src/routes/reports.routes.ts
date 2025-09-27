@@ -93,13 +93,12 @@ export function registerReportRoutes(app: Express) {
         if (kind === "half") rec.half++; else rec.full++;
       }
 
-      const rows = [] as Array<{ company: string; project: string; uniqueDays: number; fullCount: number; halfCount: number; logsTotal: number }>;
+      const rows = [] as Array<{ company: string; project: string; fullCount: number; halfCount: number; logsTotal: number }>;
       for (const [co, byProj] of agg.entries()) {
         for (const [pr, rec] of byProj.entries()) {
           rows.push({
             company: co,
             project: pr,
-            uniqueDays: rec.days.size,
             fullCount: rec.full,
             halfCount: rec.half,
             logsTotal: rec.full + rec.half * 0.5,
@@ -116,11 +115,13 @@ export function registerReportRoutes(app: Express) {
         const body = rows.map(r => [
           JSON.stringify(r.company),
           JSON.stringify(r.project),
-          r.uniqueDays, r.fullCount, r.halfCount, r.logsTotal
+          r.fullCount, r.halfCount, r.logsTotal
         ].join(",")).join("\n");
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    
         return res.send(header + body);
       } else {
+
         res.json({ from: from || null, to: to || null, count: rows.length, rows });
       }
     } catch (e: any) {

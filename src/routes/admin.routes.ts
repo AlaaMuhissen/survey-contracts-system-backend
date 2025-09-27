@@ -4,7 +4,7 @@ import { adminKeyAuth } from "@middlewares/adminKeyAuth.js";
 import { initAdminKey, getAdminKeyMeta, rotateAdminKey } from "@services/admin-key.service.js";
 import { createProject, listProjects, patchProject, deleteProject } from "@services/projects.service.js";
 import { createCompany, listCompanies, deleteCompanyAndProjects } from "@services/companies.service.js";
-import { listWorklogs } from "@services/worklogs.service";
+import { listWorklogs } from "@services/worklogs.service.js";
 
 // Reuse your validation shape for key rotation
 const RotateSchema = z.object({
