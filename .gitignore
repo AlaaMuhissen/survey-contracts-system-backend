@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+serviceAccount.json
+*.log
+contracts-10c5e-firebase-adminsdk-fbsvc-3e28d9b233.json
+contracts-10c5e-firebase-adminsdk-*.json
+*.firebase-adminsdk-*.json
+*.json
+!package.json
+!tsconfig.json

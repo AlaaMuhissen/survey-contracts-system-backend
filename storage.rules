@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function authed()       { return request.auth != null; }
+    function role()         { return authed() ? request.auth.token.role : null; }
+    function userCompany()  { return authed() ? request.auth.token.companyId : null; }
+    function isSuper()      { return role() == 'superadmin'; }
+
+    // All blobs must live under companies/{companyId}/...
+    match /companies/{cId}/{allPaths=**} {
+      allow read, write: if isSuper() || (authed() && userCompany() == cId);
+    }
+  }
+}

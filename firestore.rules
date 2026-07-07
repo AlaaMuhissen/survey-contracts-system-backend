@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function authed()        { return request.auth != null; }
+    function role()          { return authed() ? request.auth.token.role : null; }
+    function surveyId()      { return authed() ? request.auth.token.surveyId : null; }
+    function isSuper()       { return role() == 'superadmin'; }
+
+    match /surveys/{sId} {
+      // allow survey members (or superadmin) to read survey-scoped data
+      allow read: if isSuper() || (authed() && surveyId() == sId);
+      // write the survey doc itself only if superadmin (or relax if you want)
+      allow write: if isSuper();
+
+      // ============ your existing collections, now under the survey ============
+      match /companies/{companyId} {
+        allow read: if isSuper() || (authed() && surveyId() == sId);
+        // keep your previous role logic; example:
+        allow write: if isSuper() || (authed() && surveyId() == sId && role() == 'company_admin');
+
+        // if you had subcollections under companies (users, contracts, submissions, etc.)
+        match /{subCol=**}/{docId} {
+          allow read: if isSuper() || (authed() && surveyId() == sId);
+          allow write: if isSuper() || (authed() && surveyId() == sId && role() == 'company_admin');
+        }
+      }
+
+      match /projects/{pid} {
+        allow read: if isSuper() || (authed() && surveyId() == sId);
+        allow write: if isSuper() || (authed() && surveyId() == sId && role() == 'company_admin');
+      }
+
+      match /workLogs/{wid} {
+        allow read: if isSuper() || (authed() && surveyId() == sId);
+        allow write: if isSuper() || (authed() && surveyId() == sId && role() == 'company_admin');
+      }
+
+      match /config/{cid} {
+        allow read: if isSuper() || (authed() && surveyId() == sId);
+        allow write: if isSuper() || (authed() && surveyId() == sId && role() == 'company_admin');
+      }
+
+      match /counters/{cid} {
+        allow read: if isSuper() || (authed() && surveyId() == sId);
+        allow write: if isSuper() || (authed() && surveyId() == sId && role() == 'company_admin');
+      }
+      // =========================================================================
+    }
+  }
+}
