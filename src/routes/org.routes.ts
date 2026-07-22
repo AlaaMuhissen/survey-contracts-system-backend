@@ -182,6 +182,135 @@ r.delete("/surveys/:surveyId/companies/:companyId",
 );
 
 /* ===========================
+ * Private clients (worker's "private service" mode)
+ * price is admin-only — never returned by the public/worker-facing endpoint
+ * =========================== */
+
+/**
+ * Create private client (survey admin only)
+ * POST /api/surveys/:surveyId/private-clients
+ * body: { name: string, price?: number, address?: string, phone?: string, email?: string }
+ */
+r.post("/surveys/:surveyId/private-clients",
+  requireAuth, requireTenant, requireSurveyAdmin,
+  async (req, res) => {
+    try {
+      const { surveyId } = req.params as any;
+      const { name, price, address, phone, email } = req.body || {};
+
+      if (!name) return res.status(400).json({ error: "name required" });
+      if (price !== undefined && typeof price !== "number") {
+        return res.status(400).json({ error: "price must be a number" });
+      }
+
+      const ref = db.collection(paths.privateClients(surveyId)).doc();
+      const payload: any = {
+        name,
+        nameLower: String(name).toLowerCase(),
+        active: true,
+        createdAt: serverTimestamp(),
+      };
+      if (typeof price === "number") payload.price = price;
+      if (typeof address === "string" && address.trim()) payload.address = address.trim();
+      if (typeof phone === "string" && phone.trim()) payload.phone = phone.trim();
+      if (typeof email === "string" && email.trim()) payload.email = email.trim();
+
+      await ref.set(payload, { merge: true });
+      res.json({ ok: true, privateClientId: ref.id });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+/**
+ * List private clients in a survey (includes price — admin only)
+ * GET /api/surveys/:surveyId/private-clients
+ */
+r.get("/surveys/:surveyId/private-clients",
+  requireAuth, requireTenant,
+  async (req, res) => {
+    try {
+      const { surveyId } = req.params as any;
+      const snap = await db.collection(paths.privateClients(surveyId))
+        .orderBy("nameLower", "asc")
+        .get();
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      res.json({ items });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+/**
+ * Update private client (survey admin only)
+ * PUT /api/surveys/:surveyId/private-clients/:privateClientId
+ * body: { name?, price?, active?, address?, phone?, email? }
+ */
+r.put(
+  "/surveys/:surveyId/private-clients/:privateClientId",
+  requireAuth, requireTenant, requireSurveyAdmin,
+  async (req, res) => {
+    try {
+      const { surveyId, privateClientId } = req.params as any;
+      const { name, price, active, address, phone, email } = req.body || {};
+
+      if (!privateClientId) return res.status(400).json({ error: "privateClientId required" });
+      if (price !== undefined && price !== null && typeof price !== "number") {
+        return res.status(400).json({ error: "price must be a number" });
+      }
+
+      const ref = db.doc(paths.privateClient(surveyId, privateClientId));
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({ error: "not found" });
+
+      const patch: any = { updatedAt: serverTimestamp() };
+
+      if (typeof name === "string") {
+        const trimmed = name.trim();
+        if (!trimmed) return res.status(400).json({ error: "name cannot be empty" });
+        patch.name = trimmed;
+        patch.nameLower = trimmed.toLowerCase();
+      }
+      if (typeof price === "number") patch.price = price;
+      if (typeof active === "boolean") patch.active = active;
+      // address/phone/email are optional and clearable — an explicit empty
+      // string means "remove this field", not "leave unchanged"
+      if (typeof address === "string") patch.address = address.trim();
+      if (typeof phone === "string") patch.phone = phone.trim();
+      if (typeof email === "string") patch.email = email.trim();
+
+      if (Object.keys(patch).length === 1) {
+        return res.status(400).json({ error: "no fields to update" });
+      }
+
+      await ref.set(patch, { merge: true });
+      res.json({ ok: true, privateClientId });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+/**
+ * Delete private client (survey admin only)
+ * DELETE /api/surveys/:surveyId/private-clients/:privateClientId
+ */
+r.delete("/surveys/:surveyId/private-clients/:privateClientId",
+  requireAuth, requireTenant, requireSurveyAdmin,
+  async (req, res) => {
+    try {
+      const { surveyId, privateClientId } = req.params as any;
+      await db.doc(paths.privateClient(surveyId, privateClientId)).delete();
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+/* ===========================
  * Projects (per company)
  * =========================== */
 

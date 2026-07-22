@@ -10,6 +10,9 @@ export const paths = {
   config: (surveyId: string) => `surveys/${surveyId}/config`,
   counters: (surveyId: string) => `surveys/${surveyId}/counters`,
   projectsIndex: (surveyId: string) => `surveys/${surveyId}/projects`,
+  privateClients: (surveyId: string) => `surveys/${surveyId}/privateClients`,
+  privateClient: (surveyId: string, privateClientId: string) =>
+    `surveys/${surveyId}/privateClients/${privateClientId}`,
  
   // Company-level 
   company: (surveyId: string, companyId: string) =>

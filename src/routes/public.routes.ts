@@ -53,6 +53,32 @@ r.get("/public/surveys/:surveyId/companies/:companyId/projects",requireWorker, a
   }
 });
 
+/**
+ * List private (non-company) clients for this survey — for the worker's
+ * "private service" picker. NOTE: `price` is set by admins and is
+ * deliberately stripped here — this is a worker-facing endpoint.
+ */
+r.get("/public/surveys/:surveyId/private-clients", requireWorker, async (req, res) => {
+  try {
+    const { surveyId } = req.params as any;
+
+    const snapshot = await db.collection(paths.privateClients(surveyId))
+      .orderBy("createdAt", "desc")
+      .get();
+
+    const privateClients = snapshot.docs
+      .map((doc) => {
+        const { price, address, phone, email, ...rest } = doc.data() as any;
+        return { id: doc.id, ...rest };
+      })
+      .filter((c: any) => c.active !== false);
+
+    res.json({ ok: true, privateClients });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 
   r.get("/public/surveys/:surveyId/projects",requireWorker, async (req, res) => {
     try {

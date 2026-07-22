@@ -75,11 +75,28 @@ const r = Router();
       try {
     
         const { surveyId } = req.params as any;
-        let { from, to, company, project, companyId, projectId, format, all } = req.query as any;
+        let { from, to, company, project, companyIds, projectIds, privateClientIds, format, all } = req.query as any;
         const includeAll = all === "1" || all === "true";
         const coQ = (typeof company === "string" ? company : "").trim().toLowerCase();
         const prQ = (typeof project === "string" ? project : "").trim().toLowerCase();
-        console.log("Filters:", { coQ, prQ, includeAll });
+
+        // Multi-select checklists: comma-separated ids. The param being
+        // ABSENT means "no filter" (all) — but the frontend now defaults
+        // its checkboxes to all-checked and sends the full explicit list,
+        // so in practice this only matters for other/future callers. The
+        // param being PRESENT but empty (admin unchecked everything) means
+        // "match nothing" for that section — an empty Set, not null, so the
+        // `set && !set.has(...)` check below still filters every row out.
+        const parseIdSet = (v: any): Set<string> | null => {
+          if (typeof v !== "string") return null;
+          const items = v.trim().split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+          return new Set(items);
+        };
+        const companyIdSet = parseIdSet(companyIds);
+        const projectIdSet = parseIdSet(projectIds);
+        const privateClientIdSet = parseIdSet(privateClientIds);
+
+        console.log("Filters:", { coQ, prQ, includeAll, companyIdSet, projectIdSet, privateClientIdSet });
         const startDate = (typeof from === "string" && from) ? new Date(`${from}T00:00:00Z`) : null;
         const endDate   = (typeof to   === "string" && to)   ? new Date(`${to}T23:59:59Z`)   : null;
 
@@ -98,6 +115,22 @@ const r = Router();
           projectMetaById.set(id, { cost: Number.isFinite(cost) ? cost : 0 });
         }
 
+        // --- private clients meta (price) — "private" companyId rows have no
+        // matching doc in `projects`, so their cost is looked up here instead ---
+        const privateClientsSnap = await db.collection(paths.privateClients(surveyId)).get();
+        const privateClientMetaById = new Map<string, { name: string; price: number }>();
+
+        for (const p of privateClientsSnap.docs) {
+          const pc = p.data() as any;
+          const price = Number(pc.price ?? 0);
+          privateClientMetaById.set(p.id, {
+            name: String(pc.name || ""),
+            price: Number.isFinite(price) ? price : 0,
+          });
+        }
+
+        const PRIVATE_COMPANY_LABEL = "שירות פרטי";
+
         type Rec = {
           days: Set<string>;
           full: number;
@@ -105,6 +138,7 @@ const r = Router();
           companyName: string;
           projectName: string;
           pdfUrls: Set<string>;
+          isPrivate: boolean;
         };
 
         const agg = new Map<string, Map<string, Rec>>(); 
@@ -128,18 +162,52 @@ const r = Router();
           const w = d.data() as any;
           if (!keep(w)) continue;
 
-          const companyName = ((w.company ?? "—") + "").trim();
-          const projectName = ((w.project ?? "—") + "").trim();
           const companyIdVal = ((w.companyId ?? "") + "").trim();
-          const projectIdVal = ((w.projectId ?? "") + "").trim();
-          if (companyId && companyIdVal.toLowerCase() !== companyId.toLowerCase()) continue;
-          if (projectId && projectIdVal.toLowerCase() !== projectId.toLowerCase()) continue;
+          const isPrivate = companyIdVal === "private" || w.isPrivate === true;
+          // the persisted doc's companyId field is often "" for private logs
+          // (the worker form clears form.companyId on mode switch, and only
+          // the URL route param — not the doc itself — used to say
+          // "private") — this is the value actually used for grouping/
+          // filtering below, so it doesn't matter whether the raw field was
+          // ever populated.
+          const effectiveCompanyId = isPrivate ? "private" : companyIdVal;
+
+          // private-service logs never populate w.company/w.project (the
+          // worker form clears them on mode switch), and are grouped by
+          // privateClientId rather than the placeholder projectId — fall
+          // back to it only if the client wasn't resolved for some reason.
+          const privateClientId = ((w.privateClientId ?? "") + "").trim();
+          const projectIdVal = isPrivate
+            ? (privateClientId || ((w.projectId ?? "") + "").trim())
+            : ((w.projectId ?? "") + "").trim();
+
+          const companyName = isPrivate
+            ? PRIVATE_COMPANY_LABEL
+            : ((w.company ?? "—") + "").trim();
+          const projectName = isPrivate
+            ? (((w.privateClientName ?? privateClientMetaById.get(projectIdVal)?.name) ?? "—") + "").trim()
+            : ((w.project ?? "—") + "").trim();
+
+          // Company/project use OR semantics, not AND: fully selecting a
+          // company in the UI (its master checkbox) means "everything under
+          // this company, including projects added later" — sent as
+          // companyIds. Individually checking specific projects (without
+          // fully selecting their company) is sent as projectIds. A row
+          // passes if EITHER matches, so a company-level pick isn't
+          // constrained by exactly which project ids happened to exist at
+          // selection time.
+          if (!isPrivate && (companyIdSet !== null || projectIdSet !== null)) {
+            const matchesCompany = companyIdSet !== null && companyIdSet.has(effectiveCompanyId.toLowerCase());
+            const matchesProject = projectIdSet !== null && projectIdSet.has(projectIdVal.toLowerCase());
+            if (!matchesCompany && !matchesProject) continue;
+          }
+          if (isPrivate && privateClientIdSet && !privateClientIdSet.has(projectIdVal.toLowerCase())) continue;
 
           const kind: "full" | "half" = w.dayType === "half" ? "half" : "full";
           const dayStr = toDayStr(coalesceDate(w.createdAt));
 
         
-          const coId = companyIdVal;   // from your code
+          const coId = effectiveCompanyId;
           const prId = projectIdVal;
 
           if (!coId || !prId) continue; // optional: skip broken rows
@@ -155,6 +223,7 @@ const r = Router();
               companyName,
               projectName,
               pdfUrls: new Set<string>(), 
+              isPrivate,
             });
           }
 
@@ -183,7 +252,9 @@ const r = Router();
 
         for (const [coId, byProj] of agg.entries()) {
           for (const [prId, rec] of byProj.entries()) {
-            const projectCost = projectMetaById.get(prId)?.cost ?? 0;
+            const projectCost = rec.isPrivate
+              ? (privateClientMetaById.get(prId)?.price ?? 0)
+              : (projectMetaById.get(prId)?.cost ?? 0);
             const logsTotal = rec.full + rec.half * 0.5;
 
             rows.push({

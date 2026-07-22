@@ -12,6 +12,7 @@ interface WorkerJwt extends JwtPayload {
 
 export async function requireWorker(req: Request, res: Response, next: NextFunction) {
   const auth = req.headers.authorization || "";
+  console.log("requireWorker auth header:", req.headers.authorization);  
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ error: "Missing token" });
   try {

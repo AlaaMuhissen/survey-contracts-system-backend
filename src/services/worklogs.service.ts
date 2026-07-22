@@ -85,6 +85,45 @@ export async function claimSerial(surveyId: string, serial: string) {
   });
 }
 
+/**
+ * A worker submitting a "private service" work log may type a brand-new
+ * client name (no privateClientId yet) or pick an existing one from the
+ * dropdown. Either way, by the time the log is saved there needs to be a
+ * real `privateClients` doc for the admin to later attach a price to —
+ * nothing else creates one. This resolves the id if given, or finds/creates
+ * a doc by name (case-insensitive) to avoid duplicate entries when the same
+ * new client is typed more than once before the worker app's cache catches
+ * up (e.g. offline queue draining out of order).
+ */
+export async function resolveOrCreatePrivateClient(
+  surveyId: string,
+  params: { privateClientId?: string; privateClientName?: string }
+): Promise<string | null> {
+  const { privateClientId, privateClientName } = params;
+  const name = String(privateClientName || "").trim();
+
+  if (privateClientId) {
+    const ref = db.doc(paths.privateClient(surveyId, privateClientId));
+    const snap = await ref.get();
+    if (snap.exists) return privateClientId;
+    // stale/deleted id — fall through and resolve by name instead
+  }
+
+  if (!name) return privateClientId || null;
+
+  const nameLower = name.toLowerCase();
+  const col = db.collection(paths.privateClients(surveyId));
+  const existing = await col.where("nameLower", "==", nameLower).limit(1).get();
+  if (!existing.empty) return existing.docs[0].id;
+
+  const ref = col.doc();
+  await ref.set(
+    { name, nameLower, active: true, createdAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+  return ref.id;
+}
+
 /** Upload a base64 data URL PDF to Cloudinary and write Firestore doc (scoped to survey) */
 export async function uploadWorklogPdf(params: {
   companyId: string;
@@ -98,6 +137,27 @@ export async function uploadWorklogPdf(params: {
 }) {
   const { companyId, projectId, surveyId, meta = {}, pdfBase64, serial, seq, width = 5 } = params;
   if (!pdfBase64) throw new Error("Missing pdfBase64");
+
+  // "private" companyId is the worker app's placeholder for private-service
+  // logs (see frontend saveToFirebase.ts) — it's only a URL route param,
+  // never part of the submitted form/meta (the worker form clears
+  // form.companyId on mode switch), so without this the persisted doc's
+  // companyId field would stay "" and reports/filters keyed on it would
+  // silently drop the row. Stamp it onto meta so the doc is self-consistent.
+  let effectiveProjectId = projectId;
+  if (companyId === "private") {
+    const resolvedId = await resolveOrCreatePrivateClient(surveyId, {
+      privateClientId: meta.privateClientId,
+      privateClientName: meta.privateClientName,
+    });
+    if (resolvedId) {
+      effectiveProjectId = resolvedId;
+      meta.privateClientId = resolvedId;
+      meta.projectId = resolvedId;
+    }
+    meta.companyId = "private";
+    meta.isPrivate = true;
+  }
 
   let number = serial;
   let effectiveSeq = seq;
@@ -120,7 +180,7 @@ export async function uploadWorklogPdf(params: {
 
   // Same nested namespace you used in your Supabase bucket — Cloudinary
   // treats "/" as virtual folders, so this keeps the exact same organization.
-  const objectPath = `surveys/${surveyId}/companies/${companyId}/projects/${projectId}/workLogs/${id}.pdf`;
+  const objectPath = `surveys/${surveyId}/companies/${companyId}/projects/${effectiveProjectId}/workLogs/${id}.pdf`;
 
   let fileUrl: string;
   let cloudinaryPublicId: string;
