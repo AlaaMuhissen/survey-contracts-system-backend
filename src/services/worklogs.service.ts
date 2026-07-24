@@ -134,9 +134,11 @@ export async function uploadWorklogPdf(params: {
   serial?: string;          // if client reserved a number
   seq?: number | undefined; // optional: keep seq alongside number
   width?: number;           // fallback width for server-side allocation
+  workerId?: string;        // stamped from the authenticated worker's JWT
 }) {
-  const { companyId, projectId, surveyId, meta = {}, pdfBase64, serial, seq, width = 5 } = params;
+  const { companyId, projectId, surveyId, meta = {}, pdfBase64, serial, seq, width = 5, workerId } = params;
   if (!pdfBase64) throw new Error("Missing pdfBase64");
+  if (workerId) meta.workerId = workerId;
 
   // "private" companyId is the worker app's placeholder for private-service
   // logs (see frontend saveToFirebase.ts) — it's only a URL route param,

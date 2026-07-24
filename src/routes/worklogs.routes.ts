@@ -5,6 +5,8 @@ import { requireTenant } from "../middlewares/requireTenant";
 
 import { getNextSerial, uploadWorklogPdf } from "@services/worklogs.service.js";
 import { requireWorker } from "@middlewares/requireWorker";
+import { db } from "@lib/firebase.js";
+import { paths } from "../utils/paths";
 
 
 const r = Router();
@@ -19,6 +21,43 @@ function requireCanPostWorklog(req: Request, res: Response, next: Function) {
   ) return next();
   return res.status(403).json({ error: "Not allowed to post work logs" });
 }
+
+  /**
+   * A worker's own work logs — for the "my worklogs" page (status +
+   * reshare). Sorted in JS rather than via Firestore orderBy, same reason
+   * as pendingSignatures: avoids needing a composite index for a bounded,
+   * limit(200) list.
+   * GET /surveys/:surveyId/workLogs/mine
+   */
+  r.get(
+    "/surveys/:surveyId/workLogs/mine",
+    requireWorker,
+    async (req: Request, res: Response) => {
+      try {
+        const { surveyId } = req.params as any;
+        const workerId = req.authUser?.uid;
+        if (!workerId) return res.status(401).json({ error: "Missing worker" });
+
+        const snap = await db
+          .collection(paths.workLogs(surveyId))
+          .where("workerId", "==", workerId)
+          .limit(200)
+          .get();
+
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        items.sort((a: any, b: any) => {
+          const at = a.createdAt?._seconds ?? a.createdAt?.seconds ?? 0;
+          const bt = b.createdAt?._seconds ?? b.createdAt?.seconds ?? 0;
+          return bt - at; // newest first
+        });
+
+        res.json({ ok: true, items });
+      } catch (e: any) {
+        console.error("workLogs/mine error:", e);
+        res.status(500).json({ error: "Internal error" });
+      }
+    }
+  );
 
   /**
    * Reserve/preview next worklog number (per survey)
@@ -82,6 +121,7 @@ function requireCanPostWorklog(req: Request, res: Response, next: Function) {
         serial: providedNumber,
         seq: providedSeq,
         width: 5,
+        workerId: req.authUser?.uid,
       });
 
       return res.json({ ok: true, ...out });
@@ -152,4 +192,4 @@ export default r;
 //     }
 //   });
 
-// }
+// }as

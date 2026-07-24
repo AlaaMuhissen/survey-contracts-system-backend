@@ -13,6 +13,9 @@ export const paths = {
   privateClients: (surveyId: string) => `surveys/${surveyId}/privateClients`,
   privateClient: (surveyId: string, privateClientId: string) =>
     `surveys/${surveyId}/privateClients/${privateClientId}`,
+  pendingSignatures: (surveyId: string) => `surveys/${surveyId}/pendingSignatures`,
+  pendingSignature: (surveyId: string, token: string) =>
+    `surveys/${surveyId}/pendingSignatures/${token}`,
  
   // Company-level 
   company: (surveyId: string, companyId: string) =>

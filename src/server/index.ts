@@ -20,6 +20,7 @@ import publicRoutes from "../routes/public.routes";
 import authRoutes from "../routes/auth.routes";
 import workerAuthRoutes from "../routes/auth.worker.routes";
 import adminSurveyRoutes from "../routes/survey.routes";
+import signaturesRoutes from "../routes/signatures.routes";
 
 // Express setup
 const app = express();
@@ -45,6 +46,7 @@ app.use("/", worklogsRoutes); // work logs
 app.use("/", authRoutes);
 app.use("/", workerAuthRoutes);
 app.use("/", adminSurveyRoutes);  // survey admin routes
+app.use("/", signaturesRoutes);   // manager-signature requests
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error("🔥 Error:", err);
